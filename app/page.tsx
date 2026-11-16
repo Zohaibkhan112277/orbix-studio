@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -19,6 +20,8 @@ type Project = {
   project_name: string;
   client_name: string;
   created_at: string;
+  status: "Planning" | "In Progress" | "Completed" | "On Hold";
+  progress: number;
 };
 
 type Section = "Overview" | "Projects" | "Clients" | "Invoices" | "Analytics";
@@ -40,6 +43,13 @@ const avatarColors = [
   "bg-emerald-600",
 ];
 
+const projectStatuses: Project["status"][] = [
+  "Planning",
+  "In Progress",
+  "Completed",
+  "On Hold",
+];
+
 function getInitials(name: string) {
   return name
     .trim()
@@ -56,6 +66,19 @@ function formatDate(date: string) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function getStatusColor(status: Project["status"]) {
+  switch (status) {
+    case "Completed":
+      return "border-emerald-400/20 bg-emerald-400/10 text-emerald-300";
+    case "Planning":
+      return "border-sky-400/20 bg-sky-400/10 text-sky-300";
+    case "On Hold":
+      return "border-rose-400/20 bg-rose-400/10 text-rose-300";
+    default:
+      return "border-amber-400/20 bg-amber-400/10 text-amber-300";
+  }
 }
 
 export default function Home() {
@@ -124,7 +147,7 @@ export default function Home() {
 
         supabase
           .from("projects")
-          .select("id,project_name,client_name,created_at")
+          .select("id,project_name,client_name,created_at,status,progress")
           .order("created_at", { ascending: false }),
       ]);
 
@@ -215,8 +238,10 @@ export default function Home() {
           project_name: projectName.trim(),
           client_name: projectClient,
           user_id: user.id,
+          status: "In Progress",
+          progress: 0,
         })
-        .select("id,project_name,client_name,created_at")
+        .select("id,project_name,client_name,created_at,status,progress")
         .single();
 
       if (insertError) {
@@ -233,6 +258,31 @@ export default function Home() {
 
     setModal(null);
     setSaving(false);
+  }
+
+  async function updateProject(
+    projectId: string,
+    updates: Partial<Pick<Project, "status" | "progress">>
+  ) {
+    setError("");
+
+    const { data, error: updateError } = await supabase
+      .from("projects")
+      .update(updates)
+      .eq("id", projectId)
+      .select("id,project_name,client_name,created_at,status,progress")
+      .single();
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    setProjects((previous) =>
+      previous.map((project) =>
+        project.id === projectId ? (data as Project) : project
+      )
+    );
   }
 
   async function deleteClient(client: Client) {
@@ -298,6 +348,10 @@ export default function Home() {
       .toLowerCase()
       .includes(search.toLowerCase())
   );
+
+  const completedProjects = projects.filter(
+    (project) => project.status === "Completed"
+  ).length;
 
   if (loading) {
     return (
@@ -407,7 +461,6 @@ export default function Home() {
                 + New client
               </button>
 
-              {/* PROFILE MENU */}
               <div className="relative">
                 <button
                   onClick={() => setProfileOpen((open) => !open)}
@@ -549,9 +602,9 @@ export default function Home() {
                     },
                     {
                       label: "Completed projects",
-                      value: "—",
+                      value: completedProjects,
                       icon: "✓",
-                      note: "Progress tracking coming next",
+                      note: "Projects marked as completed",
                     },
                     {
                       label: "Total revenue",
@@ -605,23 +658,40 @@ export default function Home() {
                         onClick={() => setModal("project")}
                       />
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {projects.slice(0, 5).map((project) => (
                           <div
                             key={project.id}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] p-4"
+                            className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4"
                           >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">
-                                {project.project_name}
-                              </p>
-                              <p className="mt-1 truncate text-xs text-zinc-500">
-                                {project.client_name}
-                              </p>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">
+                                  {project.project_name}
+                                </p>
+                                <p className="mt-1 truncate text-xs text-zinc-500">
+                                  {project.client_name}
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-lg border px-2.5 py-1.5 text-[10px] ${getStatusColor(project.status)}`}
+                              >
+                                {project.status}
+                              </span>
                             </div>
-                            <span className="shrink-0 rounded-lg border border-amber-400/15 bg-amber-400/[0.07] px-2.5 py-1.5 text-[10px] text-amber-300">
-                              {formatDate(project.created_at)}
-                            </span>
+                            <div className="mt-4 flex items-center gap-3">
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-amber-200 to-amber-500 transition-all"
+                                  style={{
+                                    width: `${project.progress}%`,
+                                  }}
+                                />
+                              </div>
+                              <span className="w-10 text-right text-[10px] text-zinc-400">
+                                {project.progress}%
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -745,29 +815,88 @@ export default function Home() {
                     {filteredProjects.map((project) => (
                       <div
                         key={project.id}
-                        className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5"
+                        className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5"
                       >
-                        <div>
-                          <h3 className="font-semibold">
-                            {project.project_name}
-                          </h3>
-                          <p className="mt-1 text-xs text-zinc-500">
-                            Client: {project.client_name}
-                          </p>
-                          <p className="mt-2 text-[10px] text-zinc-600">
-                            Created {formatDate(project.created_at)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <span className="rounded-lg border border-amber-400/15 bg-amber-400/[0.07] px-3 py-2 text-[10px] text-amber-300">
-                            Workspace project
-                          </span>
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold">
+                              {project.project_name}
+                            </h3>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              Client: {project.client_name}
+                            </p>
+                            <p className="mt-2 text-[10px] text-zinc-600">
+                              Created {formatDate(project.created_at)}
+                            </p>
+                          </div>
+
                           <button
                             onClick={() => deleteProject(project)}
                             className="text-xs text-zinc-600 hover:text-red-300"
                           >
                             Delete
                           </button>
+                        </div>
+
+                        <div className="mt-5 grid gap-5 md:grid-cols-2">
+                          <div>
+                            <label className="mb-2 block text-xs text-zinc-400">
+                              Project status
+                            </label>
+                            <select
+                              value={project.status}
+                              onChange={(event) =>
+                                updateProject(project.id, {
+                                  status: event.target.value as Project["status"],
+                                })
+                              }
+                              className="w-full rounded-xl border border-white/10 bg-[#1a1b21] px-4 py-3 text-xs text-white outline-none transition focus:border-amber-400/50"
+                            >
+                              {projectStatuses.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <div className="mb-2 flex items-center justify-between">
+                              <label className="text-xs text-zinc-400">
+                                Project progress
+                              </label>
+                              <span className="text-xs font-semibold text-amber-300">
+                                {project.progress}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={5}
+                              value={project.progress}
+                              onChange={(event) =>
+                                updateProject(project.id, {
+                                  progress: Number(event.target.value),
+                                })
+                              }
+                              className="w-full cursor-pointer accent-amber-400"
+                            />
+                            <div className="mt-2 flex justify-between text-[10px] text-zinc-600">
+                              <span>0%</span>
+                              <span>50%</span>
+                              <span>100%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-200 to-amber-500 transition-all duration-300"
+                            style={{
+                              width: `${project.progress}%`,
+                            }}
+                          />
                         </div>
                       </div>
                     ))}
@@ -793,7 +922,7 @@ export default function Home() {
                 title="Business intelligence"
                 description="Your workspace activity at a glance."
               >
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
                     <p className="text-xs text-zinc-500">Clients</p>
                     <p className="mt-3 text-4xl font-semibold text-amber-300">
@@ -803,6 +932,7 @@ export default function Home() {
                       Total saved clients
                     </p>
                   </div>
+
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
                     <p className="text-xs text-zinc-500">Projects</p>
                     <p className="mt-3 text-4xl font-semibold text-amber-300">
@@ -810,6 +940,16 @@ export default function Home() {
                     </p>
                     <p className="mt-2 text-xs text-zinc-600">
                       Total saved projects
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
+                    <p className="text-xs text-zinc-500">Completed</p>
+                    <p className="mt-3 text-4xl font-semibold text-emerald-300">
+                      {completedProjects}
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-600">
+                      Successfully completed projects
                     </p>
                   </div>
                 </div>
