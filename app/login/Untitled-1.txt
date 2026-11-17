@@ -1,0 +1,561 @@
+
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase";
+
+type Client = {
+  id: string;
+  name: string;
+  company: string;
+  email: string | null;
+};
+
+type Invoice = {
+  id: string;
+  invoice_number: string;
+  client_id: string | null;
+  issue_date: string;
+  due_date: string | null;
+  status: "Draft" | "Sent" | "Paid" | "Overdue";
+  currency: string;
+  subtotal: number;
+  tax: number;
+  total: number;
+  notes: string | null;
+};
+
+const money = (amount: number) =>
+  new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+export default function InvoicesPage() {
+  const supabase = createClient();
+
+  const [userId, setUserId] = useState("");
+  const [clients, setClients] = useState<Client[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [error, setError] = useState("");
+
+  const [clientId, setClientId] = useState("");
+  const [description, setDescription] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [taxRate, setTaxRate] = useState("0");
+  const [dueDate, setDueDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const subtotal = Math.max(0, Number(quantity) || 0) *
+    Math.max(0, Number(unitPrice) || 0);
+  const taxAmount = subtotal * Math.max(0, Number(taxRate) || 0) / 100;
+  const total = subtotal + taxAmount;
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      window.location.href = "/login";
+      return;
+    }
+
+    setUserId(authData.user.id);
+
+    const [clientResult, invoiceResult] = await Promise.all([
+      supabase
+        .from("clients")
+        .select("id,name,company,email")
+        .order("name"),
+
+      supabase
+        .from("invoices")
+        .select(
+          "id,invoice_number,client_id,issue_date,due_date,status,currency,subtotal,tax,total,notes"
+        )
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (clientResult.error) setError(clientResult.error.message);
+    if (invoiceResult.error) setError(invoiceResult.error.message);
+
+    setClients(clientResult.data || []);
+    setInvoices((invoiceResult.data || []) as Invoice[]);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  function resetForm() {
+    setClientId("");
+    setDescription("");
+    setQuantity("1");
+    setUnitPrice("");
+    setTaxRate("0");
+    setDueDate("");
+    setNotes("");
+    setShowForm(false);
+  }
+
+  async function createInvoice(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+
+    if (!userId || !clientId || !description.trim()) {
+      setError("Please select a client and enter an item description.");
+      return;
+    }
+
+    if (Number(quantity) <= 0 || Number(unitPrice) < 0) {
+      setError("Enter a valid quantity and price.");
+      return;
+    }
+
+    setSaving(true);
+
+    const invoiceNumber = `ORB-${Date.now().toString().slice(-8)}`;
+
+    const { data: invoice, error: invoiceError } = await supabase
+      .from("invoices")
+      .insert({
+        user_id: userId,
+        client_id: clientId,
+        invoice_number: invoiceNumber,
+        due_date: dueDate || null,
+        status: "Draft",
+        currency: "PKR",
+        subtotal,
+        tax: taxAmount,
+        total,
+        notes: notes.trim() || null,
+      })
+      .select()
+      .single();
+
+    if (invoiceError || !invoice) {
+      setError(invoiceError?.message || "Could not create invoice.");
+      setSaving(false);
+      return;
+    }
+
+    const { error: itemError } = await supabase
+      .from("invoice_items")
+      .insert({
+        invoice_id: invoice.id,
+        description: description.trim(),
+        quantity: Number(quantity),
+        unit_price: Number(unitPrice),
+        amount: subtotal,
+      });
+
+    if (itemError) {
+      await supabase.from("invoices").delete().eq("id", invoice.id);
+      setError(itemError.message);
+      setSaving(false);
+      return;
+    }
+
+    resetForm();
+    await loadData();
+    setSaving(false);
+  }
+
+  async function updateStatus(
+    invoiceId: string,
+    status: Invoice["status"]
+  ) {
+    const { error } = await supabase
+      .from("invoices")
+      .update({ status })
+      .eq("id", invoiceId);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    setInvoices((current) =>
+      current.map((invoice) =>
+        invoice.id === invoiceId ? { ...invoice, status } : invoice
+      )
+    );
+  }
+
+  async function deleteInvoice(invoiceId: string) {
+    if (!window.confirm("Delete this invoice permanently?")) return;
+
+    const { error } = await supabase
+      .from("invoices")
+      .delete()
+      .eq("id", invoiceId);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    setInvoices((current) =>
+      current.filter((invoice) => invoice.id !== invoiceId)
+    );
+  }
+
+  function printInvoice(invoice: Invoice) {
+    const client = clients.find((item) => item.id === invoice.client_id);
+
+    const content = `
+      <html>
+      <head>
+        <title>${invoice.invoice_number}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; color: #222; }
+          h1 { font-size: 30px; }
+          .muted { color: #777; }
+          .line { border-top: 1px solid #ddd; margin: 25px 0; }
+          .total { font-size: 24px; font-weight: bold; }
+          .row { display: flex; justify-content: space-between; margin: 12px 0; }
+        </style>
+      </head>
+      <body>
+        <h1>ORBIX STUDIO</h1>
+        <p class="muted">Professional Invoice</p>
+        <div class="line"></div>
+        <div class="row"><strong>Invoice:</strong> ${invoice.invoice_number}</div>
+        <div class="row"><strong>Client:</strong> ${client?.name || "Client"}</div>
+        <div class="row"><strong>Company:</strong> ${client?.company || "—"}</div>
+        <div class="row"><strong>Issue date:</strong> ${invoice.issue_date}</div>
+        <div class="row"><strong>Due date:</strong> ${invoice.due_date || "—"}</div>
+        <div class="line"></div>
+        <div class="row"><strong>Subtotal</strong><span>${money(Number(invoice.subtotal))}</span></div>
+        <div class="row"><strong>Tax</strong><span>${money(Number(invoice.tax))}</span></div>
+        <div class="row total"><strong>Total</strong><span>${money(Number(invoice.total))}</span></div>
+        <div class="line"></div>
+        <p>${invoice.notes || ""}</p>
+        <p class="muted">Thank you for your business.</p>
+        <script>window.onload = () => window.print();</script>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setError("Please allow pop-ups to print your invoice.");
+      return;
+    }
+
+    printWindow.document.write(content);
+    printWindow.document.close();
+  }
+
+  const paidTotal = invoices
+    .filter((invoice) => invoice.status === "Paid")
+    .reduce((sum, invoice) => sum + Number(invoice.total), 0);
+
+  const unpaidTotal = invoices
+    .filter((invoice) => invoice.status !== "Paid")
+    .reduce((sum, invoice) => sum + Number(invoice.total), 0);
+
+  function statusStyle(status: Invoice["status"]) {
+    if (status === "Paid") return "bg-emerald-500/10 text-emerald-400";
+    if (status === "Overdue") return "bg-red-500/10 text-red-400";
+    if (status === "Sent") return "bg-blue-500/10 text-blue-400";
+    return "bg-amber-500/10 text-amber-400";
+  }
+
+  return (
+    <main className="min-h-screen bg-[#080b14] px-4 py-8 text-white sm:px-8">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <a href="/" className="text-sm text-violet-400 hover:text-violet-300">
+              ← Back to Dashboard
+            </a>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight">
+              Invoices<span className="text-violet-400">.</span>
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Create, track and manage your client payments.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold shadow-lg shadow-violet-950/40 transition hover:bg-violet-500"
+          >
+            {showForm ? "Close Form" : "+ Create Invoice"}
+          </button>
+        </header>
+
+        {error && (
+          <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+
+        <section className="mb-8 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-[#111625] p-5">
+            <p className="text-sm text-slate-400">Total invoices</p>
+            <p className="mt-3 text-3xl font-bold">{invoices.length}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#111625] p-5">
+            <p className="text-sm text-slate-400">Paid revenue</p>
+            <p className="mt-3 text-2xl font-bold text-emerald-400">
+              {money(paidTotal)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-[#111625] p-5">
+            <p className="text-sm text-slate-400">Outstanding</p>
+            <p className="mt-3 text-2xl font-bold text-amber-400">
+              {money(unpaidTotal)}
+            </p>
+          </div>
+        </section>
+
+        {showForm && (
+          <form
+            onSubmit={createInvoice}
+            className="mb-8 rounded-2xl border border-violet-500/20 bg-[#111625] p-5 sm:p-7"
+          >
+            <h2 className="mb-6 text-xl font-bold">Create new invoice</h2>
+
+            {clients.length === 0 ? (
+              <p className="mb-5 rounded-xl bg-amber-500/10 p-4 text-sm text-amber-300">
+                Add a client in your dashboard before creating an invoice.
+              </p>
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-2">
+                <label className="text-sm text-slate-300">
+                  Select client *
+                  <select
+                    required
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  >
+                    <option value="">Choose a client</option>
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name} — {client.company}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm text-slate-300">
+                  Due date
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  />
+                </label>
+
+                <label className="text-sm text-slate-300 sm:col-span-2">
+                  Service / item description *
+                  <input
+                    required
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Website design, consulting, development..."
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  />
+                </label>
+
+                <label className="text-sm text-slate-300">
+                  Quantity
+                  <input
+                    required
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  />
+                </label>
+
+                <label className="text-sm text-slate-300">
+                  Unit price (PKR)
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={unitPrice}
+                    onChange={(e) => setUnitPrice(e.target.value)}
+                    placeholder="5000"
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  />
+                </label>
+
+                <label className="text-sm text-slate-300">
+                  Tax rate (%)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  />
+                </label>
+
+                <label className="text-sm text-slate-300">
+                  Notes
+                  <input
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Additional information..."
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-[#080b14] px-4 py-3 text-white outline-none focus:border-violet-500"
+                  />
+                </label>
+              </div>
+            )}
+
+            <div className="mt-6 rounded-xl bg-[#080b14] p-5">
+              <div className="flex justify-between py-2 text-sm text-slate-400">
+                <span>Subtotal</span>
+                <span>{money(subtotal)}</span>
+              </div>
+              <div className="flex justify-between py-2 text-sm text-slate-400">
+                <span>Tax ({Number(taxRate) || 0}%)</span>
+                <span>{money(taxAmount)}</span>
+              </div>
+              <div className="mt-3 flex justify-between border-t border-white/10 pt-4 text-lg font-bold">
+                <span>Total</span>
+                <span className="text-violet-300">{money(total)}</span>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={saving || clients.length === 0}
+              className="mt-6 rounded-xl bg-violet-600 px-6 py-3 font-semibold transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? "Creating..." : "Create Invoice"}
+            </button>
+          </form>
+        )}
+
+        <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#111625]">
+          <div className="flex items-center justify-between border-b border-white/10 p-5">
+            <div>
+              <h2 className="font-bold">All invoices</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Your invoice history and payment status
+              </p>
+            </div>
+            <button
+              onClick={loadData}
+              className="text-sm text-violet-400 hover:text-violet-300"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="p-12 text-center text-slate-400">
+              Loading invoices...
+            </div>
+          ) : invoices.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 text-2xl">
+                $
+              </div>
+              <h3 className="font-semibold">No invoices yet</h3>
+              <p className="mt-2 text-sm text-slate-400">
+                Create your first invoice to start tracking payments.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[850px] text-left text-sm">
+                <thead className="bg-white/[0.03] text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-4">Invoice</th>
+                    <th className="px-5 py-4">Client</th>
+                    <th className="px-5 py-4">Date</th>
+                    <th className="px-5 py-4">Total</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {invoices.map((invoice) => {
+                    const client = clients.find(
+                      (item) => item.id === invoice.client_id
+                    );
+
+                    return (
+                      <tr key={invoice.id} className="hover:bg-white/[0.02]">
+                        <td className="px-5 py-4 font-semibold">
+                          {invoice.invoice_number}
+                        </td>
+                        <td className="px-5 py-4 text-slate-300">
+                          {client?.name || "Unknown client"}
+                        </td>
+                        <td className="px-5 py-4 text-slate-400">
+                          {invoice.issue_date}
+                        </td>
+                        <td className="px-5 py-4 font-semibold">
+                          {money(Number(invoice.total))}
+                        </td>
+                        <td className="px-5 py-4">
+                          <select
+                            value={invoice.status}
+                            onChange={(e) =>
+                              updateStatus(
+                                invoice.id,
+                                e.target.value as Invoice["status"]
+                              )
+                            }
+                            className={`rounded-full border-0 px-3 py-1.5 text-xs font-semibold outline-none ${statusStyle(invoice.status)} bg-[#080b14]`}
+                          >
+                            <option value="Draft">Draft</option>
+                            <option value="Sent">Sent</option>
+                            <option value="Paid">Paid</option>
+                            <option value="Overdue">Overdue</option>
+                          </select>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => printInvoice(invoice)}
+                              className="text-violet-400 hover:text-violet-300"
+                            >
+                              Print
+                            </button>
+                            <button
+                              onClick={() => deleteInvoice(invoice.id)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <p className="mt-6 text-center text-xs text-slate-600">
+          © {new Date().getFullYear()} Orbix Studio. All rights reserved.
+        </p>
+      </div>
+    </main>
+  );
+}

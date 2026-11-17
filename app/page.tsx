@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +21,12 @@ type Project = {
   created_at: string;
   status: "Planning" | "In Progress" | "Completed" | "On Hold";
   progress: number;
+};
+
+type Invoice = {
+  id: string;
+  total: number | string | null;
+  status: string;
 };
 
 type Section = "Overview" | "Projects" | "Clients" | "Invoices" | "Analytics";
@@ -68,6 +73,14 @@ function formatDate(date: string) {
   });
 }
 
+function formatMoney(amount: number) {
+  return new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 function getStatusColor(status: Project["status"]) {
   switch (status) {
     case "Completed":
@@ -88,6 +101,7 @@ export default function Home() {
   const [section, setSection] = useState<Section>("Overview");
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -133,23 +147,29 @@ export default function Home() {
           user.email?.split("@")[0] ||
           "User"
       );
+
       setAvatarUrl(
         user.user_metadata?.avatar_url ||
           user.user_metadata?.picture ||
           ""
       );
 
-      const [clientResult, projectResult] = await Promise.all([
-        supabase
-          .from("clients")
-          .select("id,name,company,email,created_at")
-          .order("created_at", { ascending: false }),
+      const [clientResult, projectResult, invoiceResult] =
+        await Promise.all([
+          supabase
+            .from("clients")
+            .select("id,name,company,email,created_at")
+            .order("created_at", { ascending: false }),
 
-        supabase
-          .from("projects")
-          .select("id,project_name,client_name,created_at,status,progress")
-          .order("created_at", { ascending: false }),
-      ]);
+          supabase
+            .from("projects")
+            .select("id,project_name,client_name,created_at,status,progress")
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("invoices")
+            .select("id,total,status"),
+        ]);
 
       if (!active) return;
 
@@ -165,6 +185,17 @@ export default function Home() {
 
       setClients((clientResult.data || []) as Client[]);
       setProjects((projectResult.data || []) as Project[]);
+
+      if (invoiceResult.error) {
+        setInvoices([]);
+        setError(
+          "Invoice analytics could not load: " +
+            invoiceResult.error.message
+        );
+      } else {
+        setInvoices((invoiceResult.data || []) as Invoice[]);
+      }
+
       setLoading(false);
     }
 
@@ -327,6 +358,7 @@ export default function Home() {
 
   async function logout() {
     setProfileOpen(false);
+
     const { error: signOutError } = await supabase.auth.signOut();
 
     if (signOutError) {
@@ -352,6 +384,24 @@ export default function Home() {
   const completedProjects = projects.filter(
     (project) => project.status === "Completed"
   ).length;
+
+  const paidInvoices = invoices.filter(
+    (invoice) => invoice.status.toLowerCase() === "paid"
+  );
+
+  const paidRevenue = paidInvoices.reduce(
+    (total, invoice) => total + Number(invoice.total || 0),
+    0
+  );
+
+  const unpaidInvoices = invoices.filter(
+    (invoice) => invoice.status.toLowerCase() !== "paid"
+  );
+
+  const outstandingRevenue = unpaidInvoices.reduce(
+    (total, invoice) => total + Number(invoice.total || 0),
+    0
+  );
 
   if (loading) {
     return (
@@ -394,6 +444,11 @@ export default function Home() {
               <button
                 key={item.label}
                 onClick={() => {
+                  if (item.label === "Invoices") {
+                    router.push("/invoices");
+                    return;
+                  }
+
                   setSection(item.label);
                   setSearch("");
                 }}
@@ -608,9 +663,9 @@ export default function Home() {
                     },
                     {
                       label: "Total revenue",
-                      value: "—",
+                      value: formatMoney(paidRevenue),
                       icon: "$",
-                      note: "Invoice module coming next",
+                      note: "Revenue from paid invoices",
                     },
                   ].map((stat) => (
                     <div
@@ -623,7 +678,7 @@ export default function Home() {
                           {stat.icon}
                         </span>
                       </div>
-                      <p className="mt-5 text-3xl font-semibold tracking-tight">
+                      <p className="mt-5 break-words text-2xl font-semibold tracking-tight">
                         {stat.value}
                       </p>
                       <p className="mt-2 text-[11px] text-zinc-600">
@@ -734,6 +789,28 @@ export default function Home() {
                         ))}
                       </div>
                     )}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/[0.07] bg-[#111217] p-5">
+                    <p className="text-xs text-zinc-500">Paid invoices</p>
+                    <p className="mt-3 text-3xl font-semibold text-emerald-300">
+                      {paidInvoices.length}
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-600">
+                      Successfully paid invoices
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/[0.07] bg-[#111217] p-5">
+                    <p className="text-xs text-zinc-500">Outstanding payments</p>
+                    <p className="mt-3 break-words text-2xl font-semibold text-amber-300">
+                      {formatMoney(outstandingRevenue)}
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-600">
+                      Invoices not marked as paid
+                    </p>
                   </div>
                 </div>
               </>
@@ -908,12 +985,28 @@ export default function Home() {
             {section === "Invoices" && (
               <ContentPanel
                 title="Invoice center"
-                description="A dedicated place for billing and payment management."
+                description="Manage invoices, payments and billing records."
+                action="Open invoice manager"
+                onAction={() => router.push("/invoices")}
               >
-                <EmptyState
-                  title="Invoice management is coming next"
-                  description="The invoice module will be connected to real billing records in a future build."
-                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                    <p className="text-xs text-zinc-500">Total invoices</p>
+                    <p className="mt-3 text-3xl font-semibold">
+                      {invoices.length}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                    <p className="text-xs text-zinc-500">Paid revenue</p>
+                    <p className="mt-3 break-words text-2xl font-semibold text-emerald-300">
+                      {formatMoney(paidRevenue)}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-5 text-sm text-zinc-400">
+                  Open the invoice manager to create, print, update or delete
+                  your invoices.
+                </p>
               </ContentPanel>
             )}
 
@@ -923,35 +1016,36 @@ export default function Home() {
                 description="Your workspace activity at a glance."
               >
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
-                    <p className="text-xs text-zinc-500">Clients</p>
-                    <p className="mt-3 text-4xl font-semibold text-amber-300">
-                      {clients.length}
-                    </p>
-                    <p className="mt-2 text-xs text-zinc-600">
-                      Total saved clients
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
-                    <p className="text-xs text-zinc-500">Projects</p>
-                    <p className="mt-3 text-4xl font-semibold text-amber-300">
-                      {projects.length}
-                    </p>
-                    <p className="mt-2 text-xs text-zinc-600">
-                      Total saved projects
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
-                    <p className="text-xs text-zinc-500">Completed</p>
-                    <p className="mt-3 text-4xl font-semibold text-emerald-300">
-                      {completedProjects}
-                    </p>
-                    <p className="mt-2 text-xs text-zinc-600">
-                      Successfully completed projects
-                    </p>
-                  </div>
+                  <AnalyticsCard
+                    label="Clients"
+                    value={clients.length.toString()}
+                    note="Total saved clients"
+                  />
+                  <AnalyticsCard
+                    label="Projects"
+                    value={projects.length.toString()}
+                    note="Total saved projects"
+                  />
+                  <AnalyticsCard
+                    label="Completed projects"
+                    value={completedProjects.toString()}
+                    note="Successfully completed projects"
+                  />
+                  <AnalyticsCard
+                    label="Total invoices"
+                    value={invoices.length.toString()}
+                    note="Invoices in your workspace"
+                  />
+                  <AnalyticsCard
+                    label="Paid revenue"
+                    value={formatMoney(paidRevenue)}
+                    note="Revenue from paid invoices"
+                  />
+                  <AnalyticsCard
+                    label="Outstanding payments"
+                    value={formatMoney(outstandingRevenue)}
+                    note="Invoices not marked as paid"
+                  />
                 </div>
               </ContentPanel>
             )}
@@ -1073,6 +1167,11 @@ export default function Home() {
           <button
             key={item.label}
             onClick={() => {
+              if (item.label === "Invoices") {
+                router.push("/invoices");
+                return;
+              }
+
               setSection(item.label);
               setSearch("");
             }}
@@ -1086,6 +1185,26 @@ export default function Home() {
         ))}
       </div>
     </main>
+  );
+}
+
+function AnalyticsCard({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6">
+      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="mt-3 break-words text-2xl font-semibold text-amber-300">
+        {value}
+      </p>
+      <p className="mt-2 text-xs text-zinc-600">{note}</p>
+    </div>
   );
 }
 
