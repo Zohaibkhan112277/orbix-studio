@@ -40,15 +40,17 @@ export default function PricingPage() {
     );
   }
 
-  // Aap yahan apna WhatsApp number ya email laga sakte hain jahan log payment ke baad rabta karein
-  const whatsappNumber = "923000000000"; // Apna WhatsApp number yahan likh lein
-  const upgradeMessage = encodeURIComponent(
-    `Hello! Main Orbix Studio ka Pro Plan kharidna chahta hoon. Mera naam ${userName} hai.`
+  const whatsappNumber = "923000000000"; // Apna WhatsApp number yahan likhein
+  const localMessage = encodeURIComponent(
+    `Hello! Main Orbix Studio ka Local Pro Plan (PKR 2,500) kharidna chahta hoon. Mera naam ${userName} hai.`
+  );
+  const globalMessage = encodeURIComponent(
+    `Hello! Main Orbix Studio ka International Pro Plan ($9) kharidna chahta hoon. Mera naam ${userName} hai.`
   );
 
   return (
     <main className="min-h-screen bg-[#090a0d] px-4 py-12 text-white sm:px-8">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <div className="text-center">
           <button
             onClick={() => router.push("/")}
@@ -57,38 +59,38 @@ export default function PricingPage() {
             ← Back to Dashboard
           </button>
           <p className="text-xs uppercase tracking-[0.3em] text-amber-400">
-            Orbix Studio Plans
+            Orbix Studio Global Pricing
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-            Apne Business ke liye Best Plan Chuniye
+            Choose Your Workspace Plan
           </h1>
           <p className="mt-3 text-sm text-zinc-400 max-w-lg mx-auto">
-            Freelancers aur agencies ke liye tayar kiya gaya professional workspace.
+            Flexible pricing for local professionals and international agencies.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-8 md:grid-cols-2">
-          {/* Free Plan */}
+        <div className="mt-12 grid gap-8 md:grid-cols-3">
+          {/* Free Starter Plan */}
           <div className="rounded-3xl border border-white/10 bg-[#111217] p-8 flex flex-col justify-between">
             <div>
               <p className="text-xs uppercase tracking-wider text-zinc-500 font-semibold">Starter</p>
               <h3 className="mt-2 text-2xl font-bold">Free Plan</h3>
-              <p className="mt-2 text-sm text-zinc-400">Shuruat karne walon ke liye behtareen.</p>
+              <p className="mt-2 text-xs text-zinc-400">For trying out the dashboard.</p>
 
               <div className="mt-6 flex items-baseline gap-1">
-                <span className="text-4xl font-extrabold">PKR 0</span>
+                <span className="text-3xl font-extrabold">$0</span>
                 <span className="text-xs text-zinc-500">/ forever</span>
               </div>
 
               <ul className="mt-8 space-y-4 text-sm text-zinc-300">
                 <li className="flex items-center gap-3">
-                  <span className="text-amber-400">✓</span> Basic Dashboard Access
+                  <span className="text-amber-400">✓</span> Basic Dashboard
                 </li>
                 <li className="flex items-center gap-3">
                   <span className="text-amber-400">✓</span> Manage Clients & Projects
                 </li>
                 <li className="flex items-center gap-3">
-                  <span className="text-amber-400">✓</span> Standard Invoice Generator
+                  <span className="text-amber-400">✓</span> Standard Invoices
                 </li>
               </ul>
             </div>
@@ -101,45 +103,77 @@ export default function PricingPage() {
             </button>
           </div>
 
-          {/* Pro Plan */}
-          <div className="relative rounded-3xl border border-amber-400/40 bg-gradient-to-b from-amber-400/[0.08] to-[#111217] p-8 flex flex-col justify-between shadow-2xl shadow-amber-500/5">
-            <div className="absolute -top-3 right-8 rounded-full bg-amber-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-black">
-              Recommended
-            </div>
-
+          {/* Pakistan Local Pro Plan */}
+          <div className="rounded-3xl border border-white/10 bg-[#111217] p-8 flex flex-col justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Professional</p>
-              <h3 className="mt-2 text-2xl font-bold">Pro Business</h3>
-              <p className="mt-2 text-sm text-zinc-400">Serious freelancers aur growing agencies ke liye.</p>
+              <p className="text-xs uppercase tracking-wider text-sky-400 font-semibold">Pakistan Only</p>
+              <h3 className="mt-2 text-2xl font-bold">Local Pro</h3>
+              <p className="mt-2 text-xs text-zinc-400">For Pakistani freelancers & agencies.</p>
 
               <div className="mt-6 flex items-baseline gap-1">
-                <span className="text-4xl font-extrabold">PKR 2,500</span>
-                <span className="text-xs text-zinc-400">/ month</span>
+                <span className="text-3xl font-extrabold">PKR 2,500</span>
+                <span className="text-xs text-zinc-500">/ month</span>
               </div>
 
-              <ul className="mt-8 space-y-4 text-sm text-zinc-200">
+              <ul className="mt-8 space-y-4 text-sm text-zinc-300">
                 <li className="flex items-center gap-3">
                   <span className="text-amber-400">✓</span> Unlimited Clients & Projects
                 </li>
                 <li className="flex items-center gap-3">
-                  <span className="text-amber-400">✓</span> Unlimited Professional Invoices
+                  <span className="text-amber-400">✓</span> Unlimited Invoices & PDF Print
                 </li>
                 <li className="flex items-center gap-3">
-                  <span className="text-amber-400">✓</span> Custom Branding on Invoices
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="text-amber-400">✓</span> Priority Support & Updates
+                  <span className="text-amber-400">✓</span> JazzCash / EasyPaisa / Bank
                 </li>
               </ul>
             </div>
 
             <a
-              href={`https://wa.me/${whatsappNumber}?text=${upgradeMessage}`}
+              href={`https://wa.me/${whatsappNumber}?text=${localMessage}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-10 block text-center rounded-xl border border-sky-400/40 bg-sky-400/10 py-3 text-xs font-bold text-sky-300 transition hover:bg-sky-400/20"
+            >
+              Pay via JazzCash / WhatsApp
+            </a>
+          </div>
+
+          {/* International Pro Plan */}
+          <div className="relative rounded-3xl border border-amber-400/40 bg-gradient-to-b from-amber-400/[0.08] to-[#111217] p-8 flex flex-col justify-between shadow-2xl shadow-amber-500/5">
+            <div className="absolute -top-3 right-8 rounded-full bg-amber-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-black">
+              Global
+            </div>
+
+            <div>
+              <p className="text-xs uppercase tracking-wider text-amber-400 font-semibold">International</p>
+              <h3 className="mt-2 text-2xl font-bold">Global Pro</h3>
+              <p className="mt-2 text-xs text-zinc-400">For international clients & agencies.</p>
+
+              <div className="mt-6 flex items-baseline gap-1">
+                <span className="text-3xl font-extrabold">$9</span>
+                <span className="text-xs text-zinc-400">/ month</span>
+              </div>
+
+              <ul className="mt-8 space-y-4 text-sm text-zinc-200">
+                <li className="flex items-center gap-3">
+                  <span className="text-amber-400">✓</span> Unlimited Everything
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="text-amber-400">✓</span> Custom Invoice Branding
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="text-amber-400">✓</span> Credit Card / PayPal Support
+                </li>
+              </ul>
+            </div>
+
+            <a
+              href={`https://wa.me/${whatsappNumber}?text=${globalMessage}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-10 block text-center rounded-xl bg-gradient-to-r from-amber-200 to-amber-500 py-3 text-xs font-bold text-black shadow-lg shadow-amber-500/20 transition hover:brightness-110"
             >
-              Upgrade via WhatsApp / JazzCash
+              Upgrade via Card / Global
             </a>
           </div>
         </div>
